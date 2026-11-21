@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+{# What's happening right now, in one card. #}
+<div class="hero panel">
+  <div class="hero-text">
+    <h1>{{ event_name }}</h1>
+    {% if state.running %}
+      <p><b>Round {{ state.round.id }} is being played:</b> {{ state.round.done }} of {{ state.round.total }} games finished.
+        {% if live %}<a href="#live">Watch the live games ↓</a>{% endif %}</p>
+      <div class="bar big"><div style="width: {{ (100 * state.round.done / state.round.total) if state.round.total else 0 }}%"></div></div>
+    {% elif state.submissions_open %}
+      <p><b>Submissions are open.</b> Upload a new version of your engine before the organizer starts the next round.</p>
+    {% elif round %}
+      <p><b>Submissions are closed.</b> The standings below are from round {{ round.id }}. The organizer will open submissions for the next iteration.</p>
+    {% else %}
+      <p>No rounds played yet. Waiting for the organizer to open submissions.</p>
+    {% endif %}
+  </div>
+  <div class="hero-actions">
+    <a class="btn{{ ' primary' if state.submissions_open }}" href="/docs#quick-start">{{ 'How to submit' if state.submissions_open else 'Docs & rules' }}</a>
+    {% if round %}<a class="btn" href="/rounds/{{ round.id }}">All games of round {{ round.id }}</a>{% endif %}
+  </div>
+</div>
+
+{% if rows %}
+<div class="section-head">
+  <h2>{{ 'Live standings' if round.status == 'running' else 'Leaderboard' }}</h2>
+  <span class="sub">Round {{ round.id }} · {{ progress.done }}/{{ progress.total }} games ·
+    {% if round.status == 'running' %}{{ dur(round.started_at, None) }} so far{% else %}took {{ dur(round.started_at, round.finished_at) }}{% endif %}</span>
+</div>
+{% include "_standings.html" %}
+{% endif %}
+
+{% if live %}
+<div class="section-head" id="live"><h2>Live games</h2><span class="sub">click a board to follow the game</span></div>
+<div class="live-games">
+  {% for g in live %}
+    <a href="/games/{{ g.id }}"><div class="board" data-mini-game="{{ g.id }}"></div>
+      <div class="cap"><span>{{ g.wn }} – {{ g.bn }}</span><span class="muted">#{{ g.game_no }}</span></div></a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if round_ids|length > 1 %}
+<div class="section-head"><h2>History</h2><span class="sub">rank, points and engine version in each completed round</span></div>
+<div class="panel flush scroll">
+<table>
+  <thead><tr><th>Player</th>{% for rid in round_ids %}<th class="num"><a href="/rounds/{{ rid }}">R{{ rid }}</a></th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for name, per in hist|dictsort %}
+    <tr><td>{{ name }}</td>
+    {% for rid in round_ids %}{% set x = per.get(rid) %}
+      <td class="num">{% if x %}<b>#{{ x.rank }}</b> <span class="muted small">{{ '%g' % x.points }} · v{{ x.version }}</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+    {% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+<div class="section-head"><h2>Players</h2><span class="sub">the version that will play in the next round, and each player's latest upload</span></div>
+<div class="panel flush scroll">
+<table>
+  <thead><tr><th>Player</th><th>Next round plays</th><th>Latest upload</th><th class="num">Uploads</th></tr></thead>
+  <tbody>
+  {% for p in players %}
+    <tr><td><b>{{ p.name }}</b></td>
+      <td>{% if p.ready_version %}v{{ p.ready_version }}{% else %}<span class="muted">no ready engine yet</span>{% endif %}</td>
+      <td>{% if p.last_version %}v{{ p.last_version }} <span class="pill {{ p.last_status }}">{{ p.last_status }}</span>
+        <span class="muted small">{{ p.last_at|t }}</span>{% else %}<span class="muted">nothing yet</span>{% endif %}</td>
+      <td class="num">{{ p.n_subs }}</td></tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">No players yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}
+{% block scripts %}<script>autoRefresh(4000);</script>{% endblock %}

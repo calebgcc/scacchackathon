@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ g.wn }} vs {{ g.bn }} · {{ event_name }}{% endblock %}
+{% block content %}
+<div class="gamepage">
+<div class="gamenav small">
+  <a href="/rounds/{{ g.round_id }}">← Round {{ g.round_id }} games</a>
+  <span class="muted">game #{{ g.game_no }}</span>
+  <span style="margin-left:auto">
+    {% if prev_id %}<a href="/games/{{ prev_id }}">‹ previous game</a>{% endif %}
+    {% if prev_id and next_id %} · {% endif %}
+    {% if next_id %}<a href="/games/{{ next_id }}">next game ›</a>{% endif %}
+  </span>
+</div>
+<div class="game">
+  <div class="boardcol">
+    <div class="boardrow">
+      <div class="vbar" id="vbar" title="Evaluation (white's share)"><div id="vfill" style="height:50%"></div></div>
+      <div class="boardwrap">
+        <div class="board" id="board"></div>
+        <svg class="arrows" id="arrows" viewBox="0 0 8 8" aria-hidden="true"></svg>
+      </div>
+    </div>
+    <div class="small muted" id="evaltxt"></div>
+  </div>
+  <div class="side panel">
+    <div class="ceval">
+      <label class="switch" title="Toggle with the L key">
+        <input type="checkbox" id="sf-toggle"><span class="track"></span>
+      </label>
+      <div class="ceval-main">
+        <span class="sf-score" id="sf-score"></span>
+        <span class="sf-name">Stockfish 19 <span class="muted small" id="sf-info">analysis is off</span></span>
+      </div>
+      <a class="small muted" href="https://github.com/nmrugg/stockfish.js/tree/v19.0.1" target="_blank" rel="noopener" title="Stockfish is free software (GPLv3)">GPL</a>
+    </div>
+    <div class="pvs" id="pvs" hidden></div>
+    <div class="pl" id="pl-top"></div>
+    <div class="moves" id="moves"></div>
+    <div class="endline" id="endline"></div>
+    <div class="controls">
+      <button id="first" title="Home">⏮</button><button id="prev" title="←">◀</button>
+      <button id="play" title="space">▶</button>
+      <button id="next" title="→">▶</button><button id="last" title="End">⏭</button>
+      <button id="flip" title="f">⇅</button>
+    </div>
+    <div class="pl" id="pl-bottom"></div>
+    <div class="pgnbar">
+      <button id="copypgn" class="primary">Copy PGN</button>
+      <button id="showpgn">Show PGN</button>
+      <span id="copied" class="small muted"></span>
+    </div>
+    <div class="themebar"><span class="small muted">Board</span><span class="themes" id="themes"></span></div>
+    <textarea id="pgntext" readonly hidden></textarea>
+  </div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/analysis.js?v={{ asset_v }}"></script>
+<script>initViewer({{ g.id }});</script>{% endblock %}

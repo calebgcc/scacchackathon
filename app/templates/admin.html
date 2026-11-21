@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Admin · {{ event_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Admin</h1><div class="sub">Run the event: open submissions, start rounds, manage players.</div></div>
+  <form method="post" action="/admin/logout"><button>Log out</button></form>
+</div>
+{% if msg %}<div class="flash ok">{{ msg }}</div>{% endif %}
+{% if err %}<div class="flash err">{{ err }}</div>{% endif %}
+{% if new_token %}
+<div class="panel tokenbox">
+  <b>API token for {{ token_for }}.</b> It is shown only once, so copy it now and send it to them privately.
+  <div class="token" style="margin:10px 0">{{ new_token }}</div>
+  <div class="small muted">What they run:</div>
+  <pre>curl -fsSL {{ url }}/submit.sh -o submit.sh && chmod +x submit.sh
+SCACC_TOKEN={{ new_token }} ./submit.sh path/to/engine-folder</pre>
+</div>
+{% endif %}
+
+<div class="steps">
+  <div class="panel step">
+    <div class="step-no">1</div>
+    <div class="step-body">
+      <h2>Submissions</h2>
+      <p class="status-line">
+        {% if settings.submissions_open %}<span class="dot good"></span><span><b>Open</b>: players can upload new versions.</span>
+        {% else %}<span class="dot"></span><span><b>Closed</b>: uploads are refused.</span>{% endif %}
+      </p>
+      {% if state.builds_in_progress %}<p class="small" style="color:var(--warn)">{{ state.builds_in_progress }} build(s) in progress</p>{% endif %}
+      {% if settings.submissions_open %}
+        <form method="post" action="/admin/submissions/close"><button>Close submissions</button></form>
+      {% else %}
+        <form method="post" action="/admin/submissions/open"><button class="primary" {{ 'disabled' if running }}>Open submissions</button></form>
+      {% endif %}
+    </div>
+  </div>
+  <div class="panel step">
+    <div class="step-no">2</div>
+    <div class="step-body">
+      <h2>Evaluation</h2>
+      {% if running %}
+        <p class="status-line"><span class="dot warn"></span><span><b>Round {{ state.round.id }} running</b>: {{ state.round.done }} / {{ state.round.total }} games</span></p>
+        <div class="bar" style="margin-bottom:14px"><div style="width: {{ (100 * state.round.done / state.round.total) if state.round.total else 0 }}%"></div></div>
+        <div class="actions" style="justify-content:flex-start">
+          <form method="post" action="/admin/rounds/cancel" onsubmit="return confirm('Cancel the running round?')"><button class="danger">Cancel round</button></form>
+          <a class="btn" href="/admin/rounds/{{ state.round.id }}/log" target="_blank">fastchess log</a>
+        </div>
+      {% else %}
+        {% set n = candidates|length %}
+        <p class="small muted">Starting closes submissions and plays a round-robin between each player's latest <b>ready</b> version:</p>
+        <p class="chips">{% for c in candidates %}<span class="pill ready">{{ c.name }} v{{ c.version }}</span>{% else %}<span class="muted">nobody has a ready engine yet</span>{% endfor %}</p>
+        <p class="small muted">{{ n * (n - 1) // 2 * settings.rounds * 2 }} games at {{ settings.tc }}, {{ concurrency }} at a time</p>
+        {% if state.builds_in_progress %}<p class="small" style="color:var(--warn)">⚠ {{ state.builds_in_progress }} build(s) still running. They won't be included if you start now.</p>{% endif %}
+        <form method="post" action="/admin/rounds/start" onsubmit="return confirm('Start the round now? Submissions will close.')">
+          <button class="primary" {{ 'disabled' if n < 2 }}>Start evaluation round</button></form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="section-head"><h2>Players</h2><span class="sub">each player gets a personal token to submit with</span></div>
+<div class="panel flush">
+  <form method="post" action="/admin/players" class="addrow">
+    <input name="name" placeholder="New player name, e.g. alice" required pattern="[a-z0-9][a-z0-9_\-]{0,23}"
+      title="lowercase letters, digits, - and _ (max 24)">
+    <button class="primary">Add player &amp; create token</button>
+  </form>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Name</th><th>Status</th><th class="num">Uploads</th><th>Added</th><th></th></tr></thead>
+    <tbody>
+    {% for p in players %}
+      <tr><td><b>{{ p.name }}</b></td>
+        <td>{% if p.active %}<span class="pill ready">active</span>{% else %}<span class="pill disabled">inactive</span>{% endif %}</td>
+        <td class="num">{{ p.n_subs }}</td><td class="muted">{{ p.created_at|t }}</td>
+        <td><div class="actions">
+          <form method="post" action="/admin/players/{{ p.id }}/token" onsubmit="return confirm('Replace the token for {{ p.name }}? The old one stops working.')"><button class="sm">New token</button></form>
+          <form method="post" action="/admin/players/{{ p.id }}/active"><input type="hidden" name="active" value="{{ 0 if p.active else 1 }}">
+            <button class="sm">{{ 'Deactivate' if p.active else 'Activate' }}</button></form>
+        </div></td></tr>
+    {% else %}<tr><td colspan="5" class="muted">No players yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="section-head"><h2>Submissions</h2><span class="sub">latest 100 uploads</span></div>
+<div class="panel flush scroll">
+<table>
+  <thead><tr><th class="num">#</th><th>Player</th><th>Status</th><th>Engine</th><th>Uploaded</th><th class="num">Build</th><th class="num">Size</th><th></th></tr></thead>
+  <tbody>
+  {% for s in subs %}
+    <tr><td class="num muted">{{ s.id }}</td><td><b>{{ s.name }}</b> <span class="muted">v{{ s.version }}</span></td>
+      <td><span class="pill {{ s.status }}">{{ s.status }}</span></td>
+      <td class="muted">{{ s.engine_name or '–' }}</td>
+      <td class="muted">{{ s.created_at|t }}</td>
+      <td class="num muted">{{ dur(s.created_at, s.finished_at) if s.finished_at else '…' }}</td>
+      <td class="num muted">{{ s.size_bytes|size }}</td>
+      <td><div class="actions">
+        <a class="btn sm" href="/admin/submissions/{{ s.id }}">Log</a>
+        {% if s.status == 'ready' %}<form method="post" action="/admin/submissions/{{ s.id }}/status"><input type="hidden" name="action" value="disable"><button class="sm">Disable</button></form>{% endif %}
+        {% if s.status == 'disabled' %}<form method="post" action="/admin/submissions/{{ s.id }}/status"><input type="hidden" name="action" value="enable"><button class="sm">Enable</button></form>{% endif %}
+        {% if s.status in ('failed', 'ready', 'disabled') %}<form method="post" action="/admin/submissions/{{ s.id }}/status"><input type="hidden" name="action" value="rebuild"><button class="sm">Rebuild</button></form>{% endif %}
+      </div></td></tr>
+  {% else %}<tr><td colspan="8" class="muted">No submissions yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="section-head"><h2>Rounds</h2><span class="sub">cancelled and failed rounds don't count for the leaderboard</span></div>
+<div class="panel flush scroll">
+<table>
+  <thead><tr><th>Round</th><th>Status</th><th class="num">Games</th><th>Started</th><th class="num">Duration</th><th>Note</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rounds %}
+    <tr><td><a href="/rounds/{{ r.id }}"><b>Round {{ r.id }}</b></a></td><td><span class="pill {{ r.status }}">{{ r.status }}</span></td>
+      <td class="num">{{ progress[r.id].done }} / {{ r.total_games }}</td><td class="muted">{{ r.started_at|t }}</td>
+      <td class="num">{{ dur(r.started_at, r.finished_at) }}</td><td class="small muted">{{ r.note }}</td>
+      <td><div class="actions">
+        <a class="btn sm" href="/admin/rounds/{{ r.id }}/log" target="_blank">Log</a>
+        {% if r.status != 'running' %}<form method="post" action="/admin/rounds/{{ r.id }}/delete" onsubmit="return confirm('Delete round {{ r.id }} and all its games?')"><button class="sm danger">Delete</button></form>{% endif %}
+      </div></td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No rounds yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="section-head"><h2>Settings</h2><span class="sub">game settings take effect from the next round</span></div>
+<form class="panel settings" method="post" action="/admin/settings">
+  <fieldset>
+    <legend>Games</legend>
+    <div class="fields">
+      <label>Time control
+        <input name="tc" value="{{ settings.tc }}" placeholder="10+0.1">
+        <small>seconds + increment per move, e.g. 10+0.1 or 60+1</small></label>
+      <label>Openings per pairing
+        <input type="number" name="rounds" value="{{ settings.rounds }}" min="1" max="500">
+        <small>each opening is played twice, once with each colour</small></label>
+      <label>Move limit
+        <input type="number" name="maxmoves" value="{{ settings.maxmoves }}" min="0">
+        <small>draw after this many moves; 0 = no limit</small></label>
+    </div>
+    <label class="check"><input type="checkbox" name="adjudicate" value="1" {{ 'checked' if settings.adjudicate }}>
+      <span>End clearly decided games early
+        <small>Draw if both engines score the position within ±0.10 for 8 moves each, after move 40.
+          Loss if both engines agree one side is 6+ pawns down (or getting mated) for 3 moves each.</small></span></label>
+  </fieldset>
+  <fieldset>
+    <legend>Engines &amp; server</legend>
+    <div class="fields">
+      <label>Games in parallel
+        <input type="number" name="concurrency" value="{{ settings.concurrency }}" min="0">
+        <small>0 = auto (now {{ concurrency }})</small></label>
+      <label>CPUs per engine
+        <input name="engine_cpus" value="{{ settings.engine_cpus }}">
+        <small>Docker <code>--cpus</code>, e.g. 1</small></label>
+      <label>Memory per engine
+        <input name="engine_memory" value="{{ settings.engine_memory }}">
+        <small>e.g. 512m or 1g</small></label>
+      <label>Clock tolerance (ms)
+        <input type="number" name="timemargin" value="{{ settings.timemargin }}" min="0">
+        <small>how far an engine may overrun its clock before losing on time</small></label>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Event</legend>
+    <div class="fields">
+      <label>Event name
+        <input name="event_name" value="{{ settings.event_name }}"></label>
+      <label class="wide">Public URL
+        <input name="public_url" value="{{ settings.public_url }}" placeholder="{{ url }}">
+        <small>what players use: shown on the docs page and baked into submit.sh. Leave empty to use {{ url }}</small></label>
+    </div>
+  </fieldset>
+  <button class="primary">Save settings</button>
+</form>
+{% endblock %}
+{% block scripts %}<script>
+// refresh while builds or a round are in progress, unless the admin is typing
+setInterval(async () => {
+  if (document.activeElement && ["INPUT","SELECT","TEXTAREA"].includes(document.activeElement.tagName)) return;
+  if (document.querySelector(".token")) return;
+  const s = await (await fetch("/api/state")).json();
+  if (window._sig && s.sig !== window._sig) location.href = "/admin";
+  window._sig = s.sig;
+}, 4000);
+</script>{% endblock %}

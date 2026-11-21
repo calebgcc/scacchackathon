@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Round {{ round.id }} · {{ event_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="small"><a href="/rounds">← All rounds</a></div>
+    <h1>Round {{ round.id }} <span class="pill {{ round.status }}">{{ round.status }}</span></h1>
+    <div class="meta">
+      <span>{{ progress.done }} / {{ progress.total }} games</span>
+      <span>time control {{ config.tc }}</span>
+      <span>{{ config.rounds }} openings × 2 colours per pairing</span>
+      <span>{{ config.engine_cpus }} CPU · {{ config.engine_memory }} per engine</span>
+      <span>{{ dur(round.started_at, round.finished_at) }}{{ ' so far' if round.status == 'running' }}</span>
+    </div>
+    {% if round.note %}<div class="small" style="color:var(--bad); margin-top:4px">{{ round.note }}</div>{% endif %}
+  </div>
+</div>
+<div class="section-head" style="margin-top:8px"><h2>Standings</h2></div>
+{% include "_standings.html" %}
+
+<div class="section-head"><h2>Games</h2><span class="sub" id="gcount"></span></div>
+<div class="filters panel">
+  <label>Player
+    <select id="f-player"><option value="">anyone</option>{% for r in rows|sort(attribute='name') %}<option>{{ r.name }}</option>{% endfor %}</select></label>
+  <label>Playing as
+    <select id="f-colour"><option value="">either colour</option><option value="w">white</option><option value="b">black</option></select></label>
+  <label>Opponent
+    <select id="f-opp"><option value="">anyone</option>{% for r in rows|sort(attribute='name') %}<option>{{ r.name }}</option>{% endfor %}</select></label>
+  <label>Result
+    <select id="f-result"><option value="">any</option>
+      <option value="win">player won</option><option value="loss">player lost</option><option value="draw">draw</option>
+      <option value="1-0">white won</option><option value="0-1">black won</option>
+      <option value="live">in progress</option></select></label>
+  <label>How it ended
+    <select id="f-end"><option value="">any</option>{% for r in reasons %}<option>{{ r }}</option>{% endfor %}</select></label>
+  <button id="f-reset" type="button">Reset</button>
+</div>
+<div class="panel flush scroll">
+<table id="games">
+  <thead><tr><th class="num">#</th><th>White</th><th>Black</th><th>Result</th><th>How it ended</th><th class="num">Moves</th><th></th></tr></thead>
+  <tbody>
+  {% for g in games %}
+    <tr class="clickable" data-href="/games/{{ g.id }}" data-w="{{ g.wn }}" data-b="{{ g.bn }}"
+        data-result="{{ 'live' if g.status == 'live' else g.result }}" data-end="{{ end_label(g) }}">
+      <td class="num muted">{{ g.game_no }}</td>
+      <td><a href="/games/{{ g.id }}">{{ g.wn }}</a></td><td><a href="/games/{{ g.id }}">{{ g.bn }}</a></td>
+      <td>{% if g.status == 'live' %}<span class="pill live">live</span>{% elif g.status == 'aborted' %}<span class="pill aborted">aborted</span>{% else %}<b>{{ g.result|replace('1/2-1/2', '½-½') }}</b>{% endif %}</td>
+      <td class="muted small" title="{{ g.reason }}">{{ end_label(g) }}</td>
+      <td class="num">{{ (g.nply + 1) // 2 }}</td>
+      <td class="chev">›</td>
+    </tr>
+  {% endfor %}
+  <tr id="noresults" hidden><td colspan="7" class="muted">No games match these filters.</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="small"><a href="/rounds/{{ round.id }}/pgn" target="_blank">All games of this round as PGN text →</a></p>
+{% endblock %}
+{% block scripts %}<script>initGameFilters({{ 'true' if round.status == 'running' else 'false' }});</script>{% endblock %}

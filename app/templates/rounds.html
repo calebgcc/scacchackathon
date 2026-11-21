@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Rounds · {{ event_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Rounds &amp; games</h1>
+    <div class="sub">Every evaluation round. Click one for its standings, cross table and all its games.</div></div>
+</div>
+<div class="panel flush scroll">
+<table>
+  <thead><tr><th>Round</th><th>Status</th><th>Winner</th><th class="num">Engines</th><th class="num">Games</th><th>Started</th><th class="num">Duration</th><th></th></tr></thead>
+  <tbody>
+  {% for x in rounds %}{% set r = x.r %}
+    <tr class="clickable" data-href="/rounds/{{ r.id }}">
+      <td><a href="/rounds/{{ r.id }}"><b>Round {{ r.id }}</b></a></td>
+      <td><span class="pill {{ r.status }}">{{ r.status }}</span></td>
+      <td>{% if x.winner and r.status == 'done' %}<b>{{ x.winner.name }}</b> <span class="muted small">{{ '%g' % x.winner.points }} pts</span>
+        {% elif r.status == 'running' and x.winner %}<span class="muted">{{ x.winner.name }} leading</span>
+        {% elif r.status in ('cancelled', 'failed') %}<span class="muted">not counted</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+      <td class="num">{{ x.n }}</td>
+      <td class="num">{{ x.progress.done }} / {{ r.total_games }}</td>
+      <td class="muted">{{ r.started_at|t }}</td>
+      <td class="num">{{ dur(r.started_at, r.finished_at) }}</td>
+      <td class="chev">›</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="muted">No rounds yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+document.querySelectorAll("tr[data-href]").forEach(r => r.addEventListener("click", (e) => { if (!e.target.closest("a")) location.href = r.dataset.href; }));
+autoRefresh(5000);
+</script>{% endblock %}

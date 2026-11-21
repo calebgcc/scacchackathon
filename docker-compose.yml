@@ -1,0 +1,35 @@
+services:
+  app:
+    build: .
+    image: scacchackathon:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+      # The app builds and runs engine containers through the host's Docker.
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "${BIND:-127.0.0.1}:8000:8000"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state')"]
+      interval: 30s
+      timeout: 5s
+
+  # HTTPS reverse proxy. Enable with: docker compose --profile https up -d
+  # Needs DOMAIN in .env pointing at this machine (ports 80/443 open).
+  caddy:
+    profiles: ["https"]
+    image: caddy:2.8
+    restart: unless-stopped
+    command: caddy reverse-proxy --from ${DOMAIN:-localhost} --to app:8000
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+    depends_on: [app]
+
+volumes:
+  caddy_data:

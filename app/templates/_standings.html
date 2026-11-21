@@ -1,0 +1,46 @@
+{# expects rows, cross #}
+<div class="panel flush scroll">
+<table class="standings">
+  <thead><tr>
+    <th class="rank">#</th><th>Player</th><th class="num">Points</th><th class="num hide-sm">W – D – L</th>
+    <th class="hide-sm">Score</th><th class="num">Elo</th><th class="hide-sm">Problems</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr class="{{ 'first' if r.rank == 1 and r.games }}">
+      <td class="rank"><span class="rankno">{{ r.rank }}</span></td>
+      <td><div class="who">{{ r.name }}</div>
+        <div class="muted small">v{{ r.version }}{% if r.engine_name %} · {{ r.engine_name }}{% endif %}</div></td>
+      <td class="num pts">{{ '%g' % r.points }}<span class="muted small"> / {{ r.games }}</span></td>
+      <td class="num hide-sm">{{ r.w }} – {{ r.d }} – {{ r.l }}</td>
+      <td class="hide-sm"><div class="scorebar" title="{{ '%.1f' % r.score_pct }}% of the points">
+        <div class="bar"><div style="width: {{ r.score_pct }}%"></div></div><span>{{ '%.0f' % r.score_pct }}%</span></div></td>
+      <td class="num">{% if r.games %}{{ '%+.0f' % r.elo }} <span class="muted small" title="95% confidence range">±{{ '%.0f' % r.elo_err if r.elo_err < 9999 else '∞' }}</span>{% else %}–{% endif %}</td>
+      <td class="hide-sm">{% for k, v in r.problems.items() %}<span class="pill failed" title="games lost this way">{{ v }}× {{ k|term }}</span> {% endfor %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if rows|length > 1 %}
+<div class="section-head"><h2>Cross table</h2><span class="sub">points each player (row) scored against each opponent (column)</span></div>
+<div class="panel flush fit scroll">
+<table class="cross">
+  <thead><tr><th></th>{% for c in rows %}<th title="{{ c.name }}">{{ c.name }}</th>{% endfor %}<th>Total</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr><th scope="row">{{ r.name }}</th>
+    {% for c in rows %}
+      {% if c.player_id == r.player_id %}<td class="self"></td>
+      {% else %}{% set x = cross.get((r.player_id, c.player_id)) %}
+        {% if x and x[1] %}{% set f = x[0] / x[1] %}
+        <td class="{{ 'win' if f > 0.5 else 'loss' if f < 0.5 else 'even' }}">{{ '%g' % x[0] }}<span class="muted small">/{{ x[1] }}</span></td>
+        {% else %}<td><span class="muted">·</span></td>{% endif %}
+      {% endif %}
+    {% endfor %}
+    <td class="total">{{ '%g' % r.points }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}

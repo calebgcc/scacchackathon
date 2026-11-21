@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Submission #{{ s.id }} · {{ event_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="small"><a href="/admin">← Admin</a></div>
+    <h1>{{ s.name }} v{{ s.version }} <span class="pill {{ s.status }}">{{ s.status }}</span></h1>
+    <div class="meta">
+      <span>submission #{{ s.id }}</span>
+      <span>uploaded {{ s.created_at|t }}</span>
+      {% if s.finished_at %}<span>build + checks took {{ dur(s.created_at, s.finished_at) }}</span>{% endif %}
+      <span>engine {{ s.engine_name or '–' }}</span>
+      <span><code>{{ s.image or 'no image' }}</code></span>
+    </div>
+  </div>
+</div>
+<pre class="log" id="log">{{ s.log }}</pre>
+{% endblock %}
+{% block scripts %}{% if s.status in ('queued','building','testing') %}<script>setTimeout(() => location.reload(), 2000);</script>{% endif %}
+<script>const l=document.getElementById('log'); l.scrollTop=l.scrollHeight;</script>{% endblock %}

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ event_name }}{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♞</text></svg>">
+<script>try { var t = localStorage.getItem("scacc.board"); if (t) document.documentElement.dataset.board = t; } catch (e) {}</script>
+<script src="/static/board.js?v={{ asset_v }}"></script>
+</head>
+<body>
+<header class="top"><div class="inner">
+  <a class="brand" href="/">♞ {{ event_name }}</a>
+  <nav>
+    <a href="/" class="{{ 'on' if request.url.path == '/' }}">Leaderboard</a>
+    <a href="/rounds" class="{{ 'on' if request.url.path.startswith('/rounds') or request.url.path.startswith('/games') }}">Rounds &amp; games</a>
+    <a href="/docs" class="{{ 'on' if request.url.path == '/docs' }}">Docs &amp; rules</a>
+    <a href="/admin" class="{{ 'on' if request.url.path.startswith('/admin') }}">Admin</a>
+  </nav>
+  <div class="phase">
+    {% if state.running %}
+      <span class="pill running">Round {{ state.round.id }} · {{ state.round.done }}/{{ state.round.total }}</span>
+    {% elif state.submissions_open %}
+      <span class="pill open">Submissions open</span>
+    {% else %}
+      <span class="pill closed">Submissions closed</span>
+    {% endif %}
+  </div>
+</div></header>
+<main>
+{% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

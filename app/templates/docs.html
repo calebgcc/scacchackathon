@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block title %}Docs & rules · {{ event_name }}{% endblock %}
+{% block content %}
+{# Every <section class="doc"> gets a "Copy" button (docs.js) that copies it as Markdown, ready to paste into an LLM.
+   Numbers come from the live settings, so the page always matches the next round. #}
+<div class="docs-head">
+  <div>
+    <h1 style="margin-bottom:4px">Docs &amp; rules</h1>
+    <p class="muted" style="margin:0">Everything about building, submitting and how engines are judged. Values in
+      <span class="live">highlighted</span> text are the current settings and apply to the next round.</p>
+  </div>
+  <button type="button" class="primary" data-copy-all>Copy all docs for an LLM</button>
+</div>
+
+<div class="docs">
+<nav class="toc" aria-label="Contents">
+  <div class="toc-title">Contents</div>
+  <ol id="toc"></ol>
+</nav>
+
+<div class="docs-body">
+
+<section class="doc" id="quick-start">
+  <h2>Quick start</h2>
+  <ol>
+    <li>Get your personal token from the organizer. It looks like <code>scc_…</code>, is tied to your name, and is shown only once, so keep it.</li>
+    <li>Write a chess engine in any language that speaks <b>UCI</b> (a simple text protocol, see <a href="#uci">The UCI protocol</a>).</li>
+    <li>Put a <code>Dockerfile</code> at the top of your engine folder. Running the image must start the engine (see <a href="#dockerfiles">Dockerfile templates</a>).</li>
+    <li>While submissions are open, run <code>./submit.sh path/to/engine</code> (see <a href="#submitting">Submitting</a>). The server builds it and checks it. Wait for <b>READY</b>.</li>
+    <li>When the organizer starts a round, your latest ready version plays every other engine. Results appear on the <a href="/">leaderboard</a>.</li>
+  </ol>
+  <p>Starter engines in Python: <a href="/examples/random-bot.tar.gz">random-bot</a> (plays random legal moves, about 60 lines) and
+    <a href="/examples/minimax-bot.tar.gz">minimax-bot</a> (alpha-beta search with time management). Both work as-is.</p>
+</section>
+
+<section class="doc" id="event">
+  <h2>How the event works</h2>
+  <p>The event runs in iterations, all controlled by the organizer from the admin panel:</p>
+  <ol>
+    <li><b>Submissions open.</b> You can upload new versions of your engine as often as you like. Each upload gets a version number (v1, v2, …) and is built and checked on its own.</li>
+    <li><b>The organizer starts a round.</b> This closes submissions. Every player's <b>latest version that passed the checks</b> is entered. If your newest upload failed, your previous ready version plays instead.</li>
+    <li><b>The round runs.</b> Games are played automatically, and you can watch them live on the home page.</li>
+    <li><b>The round finishes.</b> The leaderboard updates. The organizer opens submissions again for the next iteration.</li>
+  </ol>
+  <p>Submissions are currently <b class="live">{{ 'open' if settings.submissions_open else 'closed' }}</b>.
+    The organizer can also disable a specific version (for example, if it misbehaves), in which case your previous ready version is used.</p>
+</section>
+
+<section class="doc" id="rules">
+  <h2>Rules</h2>
+  <h3>Your engine</h3>
+  <ul>
+    <li>It talks <b>UCI</b> over standard input and output.</li>
+    <li>It is built from <b>your folder's <code>Dockerfile</code></b>. Any language or library is fine.</li>
+    <li>During games each engine runs in its own container with:
+      <ul>
+        <li><b class="live">{{ settings.engine_cpus }} CPU</b> and <b class="live">{{ settings.engine_memory }}</b> of memory, with no swap. Using more memory gets the engine killed, which loses the game.</li>
+        <li><b>No network access.</b> The build step does have internet, so <code>pip install</code>, <code>cargo build</code>, downloading files and so on all work at build time.</li>
+        <li>At most 256 processes/threads.</li>
+        <li>A temporary filesystem: anything written is lost when the container stops.</li>
+      </ul></li>
+  </ul>
+  <h3>Time control</h3>
+  <p>Time control: <b class="live">{{ settings.tc }}</b>, which means <span class="live">{{ tc_text }}</span>.
+    Each engine has its own clock, and the runner tells your engine how much time is left before every move.
+    An engine may overrun its clock by up to <b class="live">{{ settings.timemargin }} ms</b> (to absorb system hiccups). Beyond that, it loses on time.</p>
+  <h3>You lose a game if your engine</h3>
+  <ul>
+    <li>runs out of time (beyond the {{ settings.timemargin }} ms tolerance),</li>
+    <li>plays an illegal move or sends a <code>bestmove</code> that isn't a valid move,</li>
+    <li>crashes, exits, or closes its output ("disconnects"), including being killed for using too much memory,</li>
+    <li>stops answering <code>isready</code> ("not responsive").</li>
+  </ul>
+  <p>These losses are listed in the <b>Problems</b> column of the standings, so you can see what went wrong.</p>
+  <h3>Draws</h3>
+  <ul>
+    <li>Normal chess rules: stalemate, threefold repetition, the 50-move rule and insufficient material.</li>
+    {% if settings.maxmoves|int > 0 %}<li><b>Move limit:</b> a game still going after <b class="live">{{ settings.maxmoves }} moves</b> is a draw.</li>
+    {% else %}<li>There is <b class="live">no move limit</b>.</li>{% endif %}
+  </ul>
+  <h3>Ending decided games early (adjudication)</h3>
+  {% if settings.adjudicate %}
+  <p>Adjudication is <b class="live">on</b>. It uses the scores engines report in their <code>info … score</code> lines (see <a href="#uci-info">info lines</a>):</p>
+  <ul>
+    <li><b>Draw:</b> after move {{ draw_adj.movenumber }}, if <b>both</b> engines report a score within ±{{ '%.2f'|format(draw_adj.score / 100) }} pawns
+      ({{ draw_adj.score }} centipawns) for {{ draw_adj.movecount }} moves each in a row. The count restarts after any capture or pawn move.</li>
+    <li><b>Loss:</b> if <b>both</b> engines agree that one side is at least {{ resign_adj.score // 100 }} pawns down
+      ({{ resign_adj.score }} centipawns), or getting mated, for {{ resign_adj.movecount }} moves each in a row. The losing side loses the game.</li>
+  </ul>
+  <p>Both engines must agree, so a single engine with a broken evaluation can't end a game by itself.
+    An engine that never reports a score is never adjudicated: its games are played to the end.</p>
+  {% else %}
+  <p>Adjudication is <b class="live">off</b>: every game is played until it ends by the rules above.</p>
+  {% endif %}
+</section>
+
+<section class="doc" id="rounds">
+  <h2>How a round is played</h2>
+  <ul>
+    <li><b>Round-robin:</b> every engine plays every other engine.</li>
+    <li><b>Openings:</b> games don't start from the initial position. Each one starts from an opening taken from the
+      <code>{{ book_name }}</code> book (the book used to test Stockfish): 8 moves by each side are already on the board, so your engine takes over at move 9.
+      This gives variety and stops one engine winning every game with the same line.</li>
+    <li><b>Both colours:</b> each opening is played twice by the same two engines, once with each colour, so neither side is helped by a lucky opening.</li>
+    <li><b>Per pairing:</b> <b class="live">{{ settings.rounds }}</b> openings × 2 colours = <b class="live">{{ settings.rounds|int * 2 }} games</b>.
+      Openings are drawn at random, with a new random order every round.</li>
+    <li><b>Round size:</b>
+      {% if n_engines >= 2 %}with the <b class="live">{{ n_engines }}</b> engines that are ready right now, that's {{ n_pairs }} pairings and <b class="live">{{ n_games }} games</b>.
+      {% else %}there are not yet two ready engines (a round needs at least two).{% endif %}
+      In general: <code>players × (players − 1) / 2 × {{ settings.rounds|int * 2 }}</code> games.</li>
+    <li><b>Parallel games:</b> <b class="live">{{ concurrency }}</b> games run at the same time. Each engine has its own CPU and memory limits, so games don't slow each other down.</li>
+    <li><b>Engine processes are reused.</b> An engine is started once and then plays several games in a row. Before each game it receives <code>ucinewgame</code>, so clear any per-game state (hash tables, history) then. If an engine crashes, it loses that game and is started again for its next one.</li>
+  </ul>
+</section>
+
+<section class="doc" id="scoring">
+  <h2>Scoring and the leaderboard</h2>
+  <ul>
+    <li>A win is worth <b>1 point</b>, a draw <b>½</b>, a loss <b>0</b>.</li>
+    <li>Engines are ranked by <b>points</b>. Ties are broken by <b>Sonneborn-Berger</b> (results against stronger opponents count more:
+      for each opponent, your score against them × their total points, summed up), then by Elo.</li>
+    <li><b>Elo</b> is estimated from this round's games only (the Bradley-Terry model, the maths behind Elo ratings). The average engine is 0.
+      The <b>±</b> is a 95% confidence range: with few games it's wide, so two engines whose ranges overlap may really be equally strong.
+      These numbers are relative to this event and can't be compared with chess.com or Lichess ratings.</li>
+    <li>Standings columns: Points, Games, W / D / L (wins, draws, losses), Score (points as a percentage), Elo, and Problems (games lost on time, by illegal move or by crashing).</li>
+    <li>The <b>cross table</b> shows the points each engine scored against each other engine.</li>
+    <li>The home page shows the <b>latest completed round</b>. Older rounds are under <a href="/rounds">Rounds &amp; games</a>.
+      Rounds that were cancelled or failed (for example, if the server restarted) don't count.</li>
+  </ul>
+</section>
+
+<section class="doc" id="submitting">
+  <h2>Submitting</h2>
+  <p>With the submit script (macOS / Linux / WSL):</p>
+  <pre>curl -fsSL {{ url }}/submit.sh -o submit.sh
+chmod +x submit.sh
+export SCACC_TOKEN=scc_your_token_here     # or save it in ~/.scacc-token
+./submit.sh path/to/your/engine</pre>
+  <p>The script packs the folder (leaving out <code>.git</code>, <code>node_modules</code>, <code>target</code>, <code>build</code>, <code>__pycache__</code> and <code>.venv</code>),
+    uploads it, and streams the build and check log until it says <b>READY</b> or why it failed.</p>
+  <p>Without the script:</p>
+  <pre>tar czf engine.tgz -C path/to/your/engine .
+curl -H "Authorization: Bearer $SCACC_TOKEN" -F engine=@engine.tgz {{ url }}/api/submit
+# the response has an "id"; follow the log with:
+curl -H "Authorization: Bearer $SCACC_TOKEN" {{ url }}/api/submissions/&lt;id&gt;/log</pre>
+  <ul>
+    <li>Upload a <code>.tar.gz</code> or <code>.zip</code> of at most <b class="live">{{ max_upload_mb }} MB</b>. The <code>Dockerfile</code> must be at the top level (a single wrapping folder is fine too).</li>
+    <li>You can only upload <b>while submissions are open</b>, and only <b>one build at a time</b>: wait for the previous one to finish.</li>
+    <li>Check your token and versions with <code>curl -H "Authorization: Bearer $SCACC_TOKEN" {{ url }}/api/me</code>.</li>
+  </ul>
+</section>
+
+<section class="doc" id="checks">
+  <h2>What the server checks</h2>
+  <p>Every upload goes through two steps. Only versions that pass both are used in rounds.</p>
+  <h3>1. Build</h3>
+  <p>The server runs <code>docker build</code> on your folder, with internet access and a <b class="live">{{ build_timeout_min }}-minute</b> time limit. The full build log is streamed back to you.</p>
+  <h3>2. Smoke test</h3>
+  <p>The image is started with the same limits as in games (no network, {{ settings.engine_cpus }} CPU, {{ settings.engine_memory }}) and must:</p>
+  <ol>
+    <li>answer <code>uci</code> with <code>uciok</code> within 30 seconds, then <code>isready</code> with <code>readyok</code>;</li>
+    <li>for each of these 4 positions, after <code>ucinewgame</code>, <code>isready</code>, the <code>position</code> command and
+      <code>go wtime 10000 btime 10000 winc 100 binc 100</code>, reply with a <b>legal</b> <code>bestmove</code> within 6 seconds:
+      <ul>
+        <li><code>position startpos</code></li>
+        <li><code>position startpos moves e2e4 e7e5 g1f3</code> (black to move)</li>
+        <li><code>position fen r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4</code> (mate in one available)</li>
+        <li><code>position fen 8/P5k1/8/8/8/8/6K1/8 w - - 0 1 moves g2f3 g7f7</code> (FEN plus moves, a promotion is possible)</li>
+      </ul></li>
+  </ol>
+  <p>The engine's <code>id name</code> becomes the engine name shown on the leaderboard. Anything it prints on stderr is included in the log, which is handy for debugging.</p>
+</section>
+
+<section class="doc" id="uci">
+  <h2>The UCI protocol</h2>
+  <p>UCI (Universal Chess Interface) is how chess programs talk to engines. It's plain text: the runner writes one command per line to your
+    engine's <b>stdin</b>, and your engine answers with lines on <b>stdout</b>. Every line ends with a newline, and your engine
+    <b>must flush stdout after every line</b>, or the runner never sees it.</p>
+
+  <h3 id="uci-session">A full session, as the runner does it</h3>
+  <pre>&gt; uci                                    # once, when the engine starts
+&lt; id name MyBot 1.0
+&lt; id author Alice
+&lt; uciok
+&gt; isready
+&lt; readyok
+
+&gt; ucinewgame                             # before every game
+&gt; isready
+&lt; readyok
+
+&gt; isready                                # before every move: are you still alive?
+&lt; readyok
+&gt; position startpos moves e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3 a7a6 c1e3 e7e5 d4b3 c8e6 f2f3 b8d7
+&gt; go wtime 9820 btime 9950 winc 100 binc 100
+&lt; info depth 1 score cp 18 nodes 31 pv d1d2
+&lt; info depth 2 score cp 12 nodes 240 pv d1d2 f8e7
+&lt; info depth 3 score cp 25 nodes 1900 pv d1d2 f8e7 e1c1
+&lt; bestmove d1d2
+
+  … the same isready / position / go / bestmove for each of your moves …
+
+&gt; quit                                   # when the engine isn't needed any more</pre>
+  <p class="muted small"><code>&gt;</code> = runner to engine, <code>&lt;</code> = engine to runner. Text after <code>#</code> is a comment here, not part of the protocol.</p>
+
+  <h3>Commands your engine receives</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Command</th><th>What to do</th></tr></thead>
+    <tbody>
+      <tr><td><code>uci</code></td><td>Print <code>id name …</code> and <code>id author …</code> (optional), then <code>uciok</code>. You have {{ startup_s }} seconds, including container start-up.</td></tr>
+      <tr><td><code>isready</code></td><td>Reply <code>readyok</code> right away. It is sent at start-up, before each game and before each move.</td></tr>
+      <tr><td><code>ucinewgame</code></td><td>A new game starts: reset per-game state (hash table, killer moves, history…). No reply.</td></tr>
+      <tr><td><code>position startpos moves …</code><br><code>position fen &lt;FEN&gt; moves …</code></td><td>Set up the board. The move list is <b>always the whole game so far</b>, including the 16 opening-book moves, so the simplest approach is to rebuild the board from scratch every time. No reply.</td></tr>
+      <tr><td><code>go wtime W btime B winc WI binc BI</code></td><td>Think, then print <code>bestmove &lt;move&gt;</code>. Times are in <b>milliseconds</b>: remaining time for white and black, and the increment each gets after a move. Only your own clock matters (<code>wtime</code> if you are white). If the time control has a move count, <code>movestogo N</code> is added.</td></tr>
+      <tr><td><code>stop</code></td><td>Stop thinking and print <code>bestmove</code> immediately. During games the runner does <b>not</b> send it; it only comes at the very end, together with <code>quit</code>. Your engine must decide on its own when to stop.</td></tr>
+      <tr><td><code>quit</code></td><td>Exit.</td></tr>
+      <tr><td><code>setoption</code>, <code>debug</code>, <code>ponderhit</code>, <code>register</code></td><td>Not sent in this event. If you receive an unknown command, ignore it.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Move format</h3>
+  <ul>
+    <li>From square + to square, lowercase: <code>e2e4</code>, <code>g8f6</code>.</li>
+    <li>Castling is the king's move: <code>e1g1</code> (white short), <code>e1c1</code> (white long), <code>e8g8</code>, <code>e8c8</code>.</li>
+    <li>Promotion adds the piece letter in lowercase: <code>e7e8q</code> (or <code>r</code>, <code>b</code>, <code>n</code>).</li>
+    <li>En passant is just the pawn's move, e.g. <code>e5d6</code>.</li>
+  </ul>
+
+  <h3 id="uci-info">info lines (optional, recommended)</h3>
+  <p>While thinking, an engine can print progress lines, for example <code>info depth 6 score cp 25 nodes 12000 pv g1f3 b8c6</code>:</p>
+  <ul>
+    <li><code>depth N</code>: how many half-moves ahead this search looked.</li>
+    <li><code>score cp N</code>: evaluation in centipawns (100 = one pawn) <b>from your engine's point of view</b>: positive means good for the side to move.
+      <code>score mate N</code> means you see a mate in N moves; a negative N means you are getting mated.</li>
+    <li><code>pv …</code>: the line you expect, starting with the move you intend to play.</li>
+    <li><code>nodes</code>, <code>nps</code>, <code>time</code>: statistics, shown nowhere but harmless.</li>
+    <li><code>info string anything</code>: free text, useful for debug output.</li>
+  </ul>
+  <p>The score from your last <code>info</code> line before <code>bestmove</code> is recorded with the move. It is shown in the game viewer, and it's what adjudication is based on.
+    Engines that don't print scores work fine; they just show "no score" and their games are always played out.</p>
+
+  <h3>Time management</h3>
+  <p>Your engine is responsible for not running out of time. A simple, safe budget per move:</p>
+  <pre>budget = my_time_left / 30 + my_increment * 0.8</pre>
+  {% if budget_ms %}<p>With the current time control ({{ settings.tc }}) your clock starts at {{ base_ms }} ms{% if inc_ms %} with {{ inc_ms }} ms added per move{% endif %},
+    so the first move's budget is about <b class="live">{{ budget_ms }} ms</b>. Check the clock during your search too, not only between depths, and
+    keep a safety margin: starting a process and passing messages costs a few milliseconds per move.</p>{% endif %}
+
+  <h3>Output rules</h3>
+  <ul>
+    <li>Only print UCI lines on stdout. Put debug output on <b>stderr</b>, or in <code>info string …</code> lines.</li>
+    <li>Flush after every line: <code>print(..., flush=True)</code> or <code>python -u</code> in Python, <code>std::endl</code> or <code>fflush(stdout)</code> in C/C++,
+      <code>io::stdout().flush()</code> in Rust, <code>System.out.flush()</code> in Java.</li>
+    <li>Keep reading stdin while idle: <code>isready</code> must be answered promptly.</li>
+  </ul>
+</section>
+
+<section class="doc" id="testing">
+  <h2>Testing locally</h2>
+  <p>Build your image and feed it a few commands, the same way the server does:</p>
+  <pre>docker build -t my-engine .
+(printf "uci\nisready\nucinewgame\nposition startpos moves e2e4\ngo wtime 10000 btime 10000 winc 100 binc 100\n"; sleep 3; echo quit) \
+  | docker run -i --rm --network none --cpus={{ settings.engine_cpus }} --memory={{ settings.engine_memory }} my-engine</pre>
+  <p>You should see <code>uciok</code>, <code>readyok</code> and a <code>bestmove</code> line. Use <code>-i</code> only, not <code>-it</code>: a terminal (<code>-t</code>) changes how output is buffered.</p>
+  <p>To play real games between two engines on your machine, use <a href="https://github.com/Disservin/fastchess" target="_blank" rel="noopener">fastchess</a>
+    (what this server uses) or <a href="https://github.com/cutechess/cutechess" target="_blank" rel="noopener">cutechess</a>.
+    Point both at <code>docker run -i --rm my-engine</code> as the engine command.</p>
+</section>
+
+<section class="doc" id="dockerfiles">
+  <h2>Dockerfile templates</h2>
+  <p>The image's <code>ENTRYPOINT</code> (or <code>CMD</code>) must start the engine, reading UCI from stdin. It runs without arguments, a terminal or network.</p>
+  <h3>Python</h3>
+  <pre>FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+ENTRYPOINT ["python3", "-u", "engine.py"]</pre>
+  <h3>C++</h3>
+  <pre>FROM gcc:14 AS build
+WORKDIR /src
+COPY . .
+RUN g++ -O2 -std=c++20 -o engine *.cpp
+
+FROM debian:bookworm-slim
+COPY --from=build /src/engine /engine
+ENTRYPOINT ["/engine"]</pre>
+  <h3>Rust</h3>
+  <pre>FROM rust:1.83 AS build
+WORKDIR /src
+COPY . .
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+COPY --from=build /src/target/release/my-engine /engine
+ENTRYPOINT ["/engine"]</pre>
+  <p>Multi-stage builds (compile in a big image, copy the binary into a small one) keep images small and start-up fast.</p>
+</section>
+
+<section class="doc" id="mistakes">
+  <h2>Common mistakes</h2>
+  <ul>
+    <li><b>Not flushing stdout.</b> The check fails with "no 'uciok' line within 30s". Flush after every line.</li>
+    <li><b>Ignoring the clock.</b> An engine that always thinks for a fixed time eventually loses on time. Read <code>wtime</code>/<code>btime</code> and budget.</li>
+    <li><b>Only handling <code>startpos</code>.</b> Games start from book positions, and the smoke test uses <code>position fen … moves …</code>.</li>
+    <li><b>Keeping state between games.</b> The engine process is reused, so reset on <code>ucinewgame</code>, and don't let memory grow game after game: past {{ settings.engine_memory }} the engine is killed.</li>
+    <li><b>Using more threads than CPUs.</b> You have {{ settings.engine_cpus }} CPU; extra threads just compete for it.</li>
+    <li><b>Downloading things at runtime.</b> There's no network during games. Fetch everything (opening books, neural networks, tablebases) in the <code>Dockerfile</code>.</li>
+    <li><b>Wrong move format.</b> <code>e7e8Q</code> (uppercase) or SAN like <code>Nf3</code> are illegal moves. Use <code>e7e8q</code> and <code>g1f3</code>.</li>
+  </ul>
+</section>
+
+<section class="doc" id="viewer">
+  <h2>Watching games</h2>
+  <ul>
+    <li>Live games appear on the home page while a round runs. Click one to follow it move by move.</li>
+    <li>Every finished game can be replayed from <a href="/rounds">Rounds &amp; games</a>. Filter by player, colour, opponent, result or how the game ended.</li>
+    <li>In the game viewer: use ← → to step through moves, <b>f</b> to flip the board, and <b>Copy PGN</b> to copy the game.
+      Under the board you'll see the score each engine reported for its own move.</li>
+    <li>Switch on <b>Stockfish 19</b> analysis (or press <b>L</b>) to see the best move as an arrow, an eval bar and the best lines.
+      It runs in your browser, so it never slows down the tournament.</li>
+  </ul>
+</section>
+
+</div>
+</div>
+<textarea id="copybox" class="copybox" readonly hidden aria-label="Text to copy"></textarea>
+{% endblock %}
+{% block scripts %}<script src="/static/docs.js?v={{ asset_v }}"></script>{% endblock %}
