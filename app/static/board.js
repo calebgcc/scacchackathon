@@ -1,5 +1,4 @@
 // Minimal FEN board renderer + game viewer. No dependencies.
-const GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
 const FILES = "abcdefgh";
 
 function renderBoard(el, fen, lastMove, flipped) {
@@ -23,7 +22,8 @@ function renderBoard(el, fen, lastMove, flipped) {
       const name = FILES[file] + (rank + 1);
       const cls = ((rank + file) % 2 === 1 ? "l" : "d") + (hl.has(name) ? " hl" : "");
       let inner = "";
-      if (p) inner += `<span class="pc ${p === p.toUpperCase() ? "w" : "b"}">${GLYPH[p.toLowerCase()]}︎</span>`;
+      // Pieces are the lichess "cburnett" set, drawn from CSS (see static/pieces/).
+      if (p) inner += `<span class="pc ${p === p.toUpperCase() ? "w" : "b"}${p.toUpperCase()}"></span>`;
       if (i === 7) inner += `<span class="coord f">${FILES[file]}</span>`;
       if (j === 0) inner += `<span class="coord r">${rank + 1}</span>`;
       html += `<div class="sq ${cls}">${inner}</div>`;

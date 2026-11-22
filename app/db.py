@@ -105,11 +105,11 @@ def now() -> float:
 DEFAULT_SETTINGS = {
     "submissions_open": False,
     "tc": "10+0.1",
-    "rounds": 10,              # openings per pairing; each played twice (colours swapped)
+    "rounds": 25,              # openings per pairing; each played twice (colours swapped)
     "concurrency": 0,          # 0 = auto (cpus // 2)
     "timemargin": 100,         # ms an engine may overrun its clock before losing
     "engine_cpus": "1",
-    "engine_memory": "512m",
+    "engine_memory": "1g",
     "adjudicate": True,        # draw/resign adjudication based on engine scores
     "maxmoves": 200,           # draw after this many full moves
     "event_name": "Scacchackathon",

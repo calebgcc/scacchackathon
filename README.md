@@ -7,6 +7,7 @@ Tournament server for a one-day chess engine hackathon.
 - The organizer opens submissions and starts evaluation rounds from the **admin panel**.
 - A round is a [fastchess](https://github.com/Disservin/fastchess) round-robin between each player's latest ready version, using the 8moves_v3 opening book with colours swapped.
 - The public site shows the leaderboard (points, W/D/L, Elo ±, cross table, history over rounds), live games and a replay viewer for every game. The viewer has optional Stockfish 19 analysis (best-move arrows, eval bar, top two lines) that runs in the viewer's browser (lite WASM build, ~1.9 MB, bundled into the image at build time), so it never takes CPU from the tournament.
+- The board uses lichess's default "cburnett" piece set by Colin M.L. Burnett (GPLv2+; credits in `app/static/pieces/README.md`).
 
 ## How it works
 
@@ -59,7 +60,7 @@ open http://localhost:8000
 3. When everyone is ready: **Start evaluation round**. This closes submissions and starts the round-robin.
    Each player's latest `ready` version plays. Builds still running are skipped (the admin page warns you).
 4. Watch the leaderboard and live boards on the projector. When the round finishes, open submissions again for the next iteration.
-5. For the final, consider more openings per pairing (Settings → e.g. 20) for tighter error bars.
+5. For the final, consider more openings per pairing (Settings → e.g. 40) for tighter error bars.
 
 **Settings** (admin, applied to the next round): time control, openings per pairing, games in parallel (0 = CPUs/2),
 CPU and memory per engine, time margin, max moves, score-based adjudication.
